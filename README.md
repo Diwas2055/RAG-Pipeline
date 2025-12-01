@@ -37,7 +37,7 @@ The architecture consists of FastAPI (handling API requests), Celery (processing
 │   Flower    │                          │  Processing │
 │  Dashboard  │                          └─────────────┘
 └─────────────┘
-
+```
 ## Project Structure
 
 ```
