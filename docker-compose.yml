@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag_api
+    ports:
+      - "8000:8000"
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 2
+    volumes:
+      - ./storage:/app/storage
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker_default:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag_worker_default
+    command: celery -A src.workers.celery_worker.celery_app worker --loglevel=info --queues=default --concurrency=2 --hostname=worker_default@%h
+    volumes:
+      - ./storage:/app/storage
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker_document:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag_worker_document
+    command: celery -A src.workers.celery_worker.celery_app worker --loglevel=info --queues=document --concurrency=2 --hostname=worker_document@%h
+    volumes:
+      - ./storage:/app/storage
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker_vectorstore:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag_worker_vectorstore
+    command: celery -A src.workers.celery_worker.celery_app worker --loglevel=info --queues=vectorstore --concurrency=2 --hostname=worker_vectorstore@%h
+    volumes:
+      - ./storage:/app/storage
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker_rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag_worker_rag
+    command: celery -A src.workers.celery_worker.celery_app worker --loglevel=info --queues=rag --concurrency=2 --hostname=worker_rag@%h
+    volumes:
+      - ./storage:/app/storage
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag_flower
+    command: celery -A src.workers.celery_worker.celery_app flower --port=5555 --broker=redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis_data:
